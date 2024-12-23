@@ -3,31 +3,33 @@ import random
 import argparse
 import numpy as np
 
-from dataset import PAUTFLAW
+from dataset import PAUTFLAW2
 from utils import collate_fn, AnnotationBalancedKFoldPAUTFLAW,set_seed
 
 import torch
 from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 
-from segment_anything import sam_model_registry
+from sam2.build_sam import build_sam2
 
-from PAUTSAM import PAUTSAM
+from PAUTSAM2 import PAUTSAM2
 from evaluator import evaluate
 
-from sam_LoRa import LoRA_Sam
+from peft import LoraConfig, get_peft_model
 import time
-
 def main():
 
+    # torch.cuda.empty_cache()
+    # set_seed(42)
     
     parser = argparse.ArgumentParser()
+    # parser.add_argument('--load_org_SAM', type=int, default=0)
     parser.add_argument('--dataset_path', type=str, \
-        default='/path/to/your/COCO_format_dataset/', help='path to dataset')
+        default='/path/to/COCO format dataset/', help='path to dataset')
     parser.add_argument('--split', type=str, \
         default='val', help='what split of dataset for evaluation')
 
-    parser.add_argument('--model_type', type=str, default='vit_b')
+    parser.add_argument('--model_cfg', type=str, default='vit_b')
     parser.add_argument('--checkpoint', type=str, default='./checkpoints/sam_vit_b_01ec64.pth')
 
     parser.add_argument('--task_name', type=str, default='MskDec')
@@ -70,7 +72,7 @@ def main():
 
     if args.split in ["train", "val", "test"]:
 
-        val_dataset = PAUTFLAW(dataset_root=args.dataset_path,split=args.split,preprocess=args.backbone)
+        val_dataset = PAUTFLAW2(dataset_root=args.dataset_path,split=args.split,preprocess=args.backbone)
         print(f"\nYou selected the option that evalutes model on your {args.split} set.\n")
 
         val_dataloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True,pin_memory = True,collate_fn=collate_fn)
@@ -78,40 +80,44 @@ def main():
         os.makedirs(output_save_path, exist_ok=True)
 
 
- 
+
+
         if args.finetune_mode == 0:
-            model_load_path = os.path.join(args.work_dir, args.task_name,args.run_name,'sam_model_best.pth')
-            sam_model = sam_model_registry[args.model_type](checkpoint=model_load_path)
+            pass
+            # model_load_path = os.path.join(args.work_dir, args.task_name,args.run_name,'sam_model_best.pth')
+            # sam_model = sam_model_registry[args.model_cfg](checkpoint=model_load_path)
 
 
         elif args.finetune_mode == 1:
-            sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
-            sam_model = LoRA_Sam(args,sam_model,r=args.lora_rank).sam
-            model_load_path = os.path.join(args.work_dir, args.task_name,args.run_name,'sam_model_best.pth')
-            sam_model.load_state_dict(torch.load(model_load_path), strict = False)
+            pass
+        #     sam_model = sam_model_registry[args.model_cfg](checkpoint=args.checkpoint)        
+        #     sam_model = LoRA_Sam(args,sam_model,r=args.lora_rank).sam
+        #     model_load_path = os.path.join(args.work_dir, args.task_name,args.run_name,'sam_model_best.pth')
+        #     sam_model.load_state_dict(torch.load(model_load_path), strict = False)
 
-        pautsam_model = PAUTSAM(
-            image_encoder=sam_model.image_encoder,
-            mask_decoder=sam_model.mask_decoder,
-            prompt_encoder=sam_model.prompt_encoder,
-            selected_blocks=args.selected_blocks
-        )
+        # pautsam_model = PAUTSAM(
+        #     image_encoder=sam_model.image_encoder,
+        #     mask_decoder=sam_model.mask_decoder,
+        #     prompt_encoder=sam_model.prompt_encoder,
+        #     selected_blocks=args.selected_blocks
+        # )
 
-        evaluate(
-            valloader = val_dataloader,
-            device = int(os.environ["LOCAL_RANK"]),
-            model = pautsam_model.to(int(os.environ["LOCAL_RANK"])),
-            do_filtering = args.do_filtering,
-            kernel_size = args.kernel_size,
-            dilate_iter = args.dilate_iter,
-            iou_thresh = args.iou_thresh,
-            min_area = args.min_area,
-            output_save_path = output_save_path,
-        )
+        # torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+
+        # evaluate(
+        #     valloader = val_dataloader,
+        #     device = int(os.environ["LOCAL_RANK"]),
+        #     model = pautsam_model.to(int(os.environ["LOCAL_RANK"])),
+        #     do_filtering = args.do_filtering,
+        #     kernel_size = args.kernel_size,
+        #     dilate_iter = args.dilate_iter,
+        #     iou_thresh = args.iou_thresh,
+        #     min_area = args.min_area,
+        #     output_save_path = output_save_path,
+        # )
     elif args.split == "k_fold":
         kfold_json_load_path = os.path.join("k_fold_dataset",args.task_name,"folds_dataset.json")
         kfold_dataset = AnnotationBalancedKFoldPAUTFLAW.load_folds(kfold_json_load_path)  
-        # kfold_dataset.print_split_fold_stats()
 
         for fold in range(5):
             set_seed(42)
@@ -124,30 +130,39 @@ def main():
                 shuffle=True,collate_fn=collate_fn,num_workers=1)
 
             if args.finetune_mode == 0:
-                # sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
-
                 model_load_path = os.path.join(args.work_dir,args.task_name,args.run_name,'sam_model_best.pth') 
-                sam_model = sam_model_registry[args.model_type](checkpoint=model_load_path)
+                fineruned_checkpoint = torch.load(model_load_path, map_location="cuda",weights_only=True)
+                sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
 
             elif args.finetune_mode == 1:
-                sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
-                sam_model = LoRA_Sam(args,sam_model,r=args.lora_rank).sam
-                model_load_path = os.path.join(args.work_dir, args.task_name,args.run_name,'sam_model_best.pth')
-                sam_model.load_state_dict(torch.load(model_load_path), strict = False)
+                print(args.encoder_lora_layer)
+                sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
+                lora_config = LoraConfig(
+                    r=args.lora_rank,
+                    lora_alpha=args.lora_rank,
+                    target_modules=['qkv'],
+                    lora_dropout=0,
+                    bias="none",
+                    modules_to_save=[],
+                    layers_to_transform= "null" if args.encoder_lora_layer == 0 else args.encoder_lora_layer
+                )
+                sam2_model.image_encoder = get_peft_model(sam2_model.image_encoder, lora_config)
+                model_load_path = os.path.join(args.work_dir,args.task_name,args.run_name,'sam_model_best.pth')
+                fineruned_checkpoint = torch.load(model_load_path, map_location="cuda",weights_only=True)  
 
-            pautsam_model = PAUTSAM(
-                image_encoder=sam_model.image_encoder,
-                mask_decoder=sam_model.mask_decoder,
-                prompt_encoder=sam_model.prompt_encoder,
+            pautsam2_model = PAUTSAM2(
+                model=sam2_model,
                 selected_blocks=args.selected_blocks
             )
+            pautsam2_model.load_state_dict(fineruned_checkpoint, strict=True)
+
             output_save_path = os.path.join(args.work_dir,args.task_name,args.run_name,"output_val")
             os.makedirs(output_save_path, exist_ok=True)
 
             f1 = evaluate(
                 valloader = val_dataloader,
                 device = int(os.environ["LOCAL_RANK"]),
-                model = pautsam_model.to(int(os.environ["LOCAL_RANK"])),
+                model = pautsam2_model.to(int(os.environ["LOCAL_RANK"])),
                 do_filtering = args.do_filtering,
                 kernel_size = args.kernel_size,
                 dilate_iter = args.dilate_iter,
@@ -162,8 +177,8 @@ def main():
             kfold_dataset.fold_results[fold]['f1_score'] = f1
 
             del val_dataloader
-            del sam_model
-            del pautsam_model
+            del sam2_model
+            del pautsam2_model
 
             torch.cuda.empty_cache()
 
@@ -182,26 +197,35 @@ def main():
 
         if args.finetune_mode == 0:
             model_load_path = os.path.join(args.work_dir,args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth') 
-            sam_model = sam_model_registry[args.model_type](checkpoint=model_load_path)
-            # sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
+            fineruned_checkpoint = torch.load(model_load_path, map_location="cpu",weights_only=True)
+            sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
 
         elif args.finetune_mode == 1:
-            sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
-            sam_model = LoRA_Sam(args,sam_model,r=args.lora_rank).sam
-            model_load_path = os.path.join(args.work_dir, args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth')
-            sam_model.load_state_dict(torch.load(model_load_path), strict = False)
+            print(args.encoder_lora_layer)
+            sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
+            lora_config = LoraConfig(
+                r=args.lora_rank,
+                lora_alpha=args.lora_rank,
+                target_modules=['qkv'],
+                lora_dropout=0,
+                bias="none",
+                modules_to_save=[],
+                layers_to_transform= "null" if args.encoder_lora_layer == 0 else args.encoder_lora_layer
+            )
+            sam2_model.image_encoder = get_peft_model(sam2_model.image_encoder, lora_config)
+            model_load_path = os.path.join(args.work_dir,args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth')
+            fineruned_checkpoint = torch.load(model_load_path, map_location="cpu",weights_only=True)  
 
-        pautsam_model = PAUTSAM(
-            image_encoder=sam_model.image_encoder,
-            mask_decoder=sam_model.mask_decoder,
-            prompt_encoder=sam_model.prompt_encoder,
+        pautsam2_model = PAUTSAM2(
+            model=sam2_model,
             selected_blocks=args.selected_blocks
         )
+        pautsam2_model.load_state_dict(fineruned_checkpoint, strict=True)
         start = time.time()
         evaluate(
             valloader = test_dataloader,
             device = int(os.environ["LOCAL_RANK"]),
-            model = pautsam_model.to(int(os.environ["LOCAL_RANK"])),
+            model = pautsam2_model.to(int(os.environ["LOCAL_RANK"])),
             do_filtering = args.do_filtering,
             kernel_size = args.kernel_size,
             dilate_iter = args.dilate_iter,
@@ -209,8 +233,8 @@ def main():
             min_area = args.min_area,
             output_save_path = output_save_path,
         )
-        end = time.time()
-        print(end - start)        
+        end=time.time()
+        print(end-start)
 
 
 

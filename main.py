@@ -4,9 +4,9 @@ import numpy as np
 import os
 from tqdm import tqdm
 
-from dataset import PAUTFLAW
+from dataset import PAUTFLAW2
 from utils import collate_fn,init_wandb,AnnotationBalancedKFoldPAUTFLAW,set_seed
-from PAUTSAM import PAUTSAM
+from PAUTSAM2 import PAUTSAM2
 from evaluator import evaluate
 
 
@@ -17,13 +17,12 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler  
 from torch.distributed import init_process_group,destroy_process_group
 
+from sam2.build_sam import build_sam2
 
-from segment_anything import sam_model_registry
+from trainer import SAM2Trainer
+# from trainerDDP import SAMTrainerDDP
 
-from trainer import SAMTrainer
-from trainerDDP import SAMTrainerDDP
-
-from sam_LoRa import LoRA_Sam
+from peft import LoraConfig, get_peft_model
 
 
 def ddp_setup():
@@ -37,7 +36,7 @@ def ddp_training(
 
     ddp_setup()
 
-    train_dataset = PAUTFLAW(dataset_root=args.dataset_path,split="train",\
+    train_dataset = PAUTFLAW2(dataset_root=args.dataset_path,split="train",\
         filter_empty=args.filter_empty,preprocess=args.backbone)    
     train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size,collate_fn=collate_fn,\
         shuffle=False,pin_memory=True,sampler=DistributedSampler(train_dataset),num_workers=16)
@@ -47,45 +46,47 @@ def ddp_training(
         os.makedirs(model_save_path, exist_ok=True)
         print("Model is saving in "+model_save_path)
 
-        val_dataset = PAUTFLAW(dataset_root=args.dataset_path,split="val",preprocess=args.backbone)
+        val_dataset = PAUTFLAW2(dataset_root=args.dataset_path,split="val",preprocess=args.backbone)
         val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size,pin_memory=True,\
             shuffle=True,collate_fn=collate_fn)
 
-
-    sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)   
-    trainer = SAMTrainerDDP(
-        gpu_id = int(os.environ["LOCAL_RANK"]),
-        model = sam_model,
-        selected_blocks = args.selected_blocks,
-        trainloader = train_dataloader,
-        valloader = val_dataloader if int(os.environ["LOCAL_RANK"]) == 0 else None,
-        testloader = None,
-        model_save_path = model_save_path if int(os.environ["LOCAL_RANK"]) == 0 else "",
-        lr = args.lr,
-        weight_decay = args.weight_decay,
-        max_epochs = args.max_epochs,
-        val_epoch_duration=args.val_epoch_duration,
-        min_area=args.min_area,
-        kernel_size=args.kernel_size,
-        dilate_iter=args.dilate_iter,
-        iou_thresh=args.iou_thresh,
-        world_size = int(os.environ["LOCAL_WORLD_SIZE"])    
-    )
-    trainer.train()
-    destroy_process_group()
+    # The following block requires update for SAM2
+    # sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)   
+    # trainer = SAMTrainerDDP(
+    #     gpu_id = int(os.environ["LOCAL_RANK"]),
+    #     model = sam_model,
+    #     selected_blocks = args.selected_blocks,
+    #     trainloader = train_dataloader,
+    #     valloader = val_dataloader if int(os.environ["LOCAL_RANK"]) == 0 else None,
+    #     testloader = None,
+    #     model_save_path = model_save_path if int(os.environ["LOCAL_RANK"]) == 0 else "",
+    #     lr = args.lr,
+    #     weight_decay = args.weight_decay,
+    #     max_epochs = args.max_epochs,
+    #     val_epoch_duration=args.val_epoch_duration,
+    #     min_area=args.min_area,
+    #     kernel_size=args.kernel_size,
+    #     dilate_iter=args.dilate_iter,
+    #     iou_thresh=args.iou_thresh,
+    #     world_size = int(os.environ["LOCAL_WORLD_SIZE"])    
+    # )
+    # trainer.train()
+    # destroy_process_group()
 
 
 def main():
     
+
+
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--dataset_path', type=str, \
-        default='/path/to/COCO_format_dataset/', help='path to dataset')
+        default='/path/to/COCO format dataset/', help='path to dataset')
     parser.add_argument('--task_name', type=str, default='MskDec')
     parser.add_argument('--run_name', type=str, default='MskDec')
 
-    parser.add_argument('--model_type', type=str, default='vit_b')
-    parser.add_argument('--checkpoint', type=str, default='./checkpoints/sam_vit_b_01ec64.pth')
+    parser.add_argument('--model_cfg', type=str, default='sam2_hiera_t')
+    parser.add_argument('--checkpoint', type=str, default='./checkpoints/sam2_hiera_tiny.pt')
 
     
     parser.add_argument("--single_device", action="store_true", default=False, help="use one gpu")
@@ -94,7 +95,7 @@ def main():
     # means multi device (all available gpus)
 
     parser.add_argument('--work_dir', type=str, default='./work_dir')
-    parser.add_argument('--backbone', type=str, default='ViT')
+    parser.add_argument('--backbone', type=str, default='Hiera')
 
     # train
     parser.add_argument('--max_epochs', type=int, default=30)
@@ -106,7 +107,6 @@ def main():
                         help='Warm up iterations, only valid when warmup is activated')
     parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument('--lr_reducer_factor', type=float, default=0.9)
-
 
     parser.add_argument('--filter_empty', action="store_true", default=False, help="filter images without annots in the dataset")
     # False means include images does not have any annotations, based on PAUTFLAW it will have 338 images in total
@@ -156,6 +156,8 @@ def main():
         torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
         torch.cuda.empty_cache()
         set_seed(42)
+        # print(torch.cuda.get_rng_state(device='cuda'))
+        # print(np.random.get_state())
         print("Using GPU "+str(int(os.environ["CUDA_VISIBLE_DEVICES"])+1)+".")
 
         if args.use_wandb:
@@ -170,39 +172,41 @@ def main():
             os.makedirs(model_save_path, exist_ok=True)
             print("Model is saving in "+model_save_path)
 
-            train_dataset = PAUTFLAW(dataset_root=args.dataset_path,split="train",\
+            train_dataset = PAUTFLAW2(dataset_root=args.dataset_path,split="train",\
                 filter_empty=args.filter_empty, preprocess=args.backbone)
             train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size,pin_memory=True,\
                 shuffle=True,collate_fn=collate_fn,num_workers=4)
 
-            val_dataset = PAUTFLAW(dataset_root=args.dataset_path,split="val",preprocess=args.backbone)
+            val_dataset = PAUTFLAW2(dataset_root=args.dataset_path,split="val",preprocess=args.backbone)
             val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size,pin_memory=True,\
                 shuffle=True,collate_fn=collate_fn,num_workers=1)
-                
-            sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
-            pautsam_model = PAUTSAM(
-                image_encoder=sam_model.image_encoder,
-                mask_decoder=sam_model.mask_decoder,
-                prompt_encoder=sam_model.prompt_encoder,
-                selected_blocks=args.selected_blocks
-            )
-            if args.finetune_mode == 1:
-                pautsam_model = LoRA_Sam(args,pautsam_model,r=args.lora_rank).sam
+            # requires update                
+            # sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
+            # pautsam_model = PAUTSAM(
+            #     image_encoder=sam_model.image_encoder,
+            #     mask_decoder=sam_model.mask_decoder,
+            #     prompt_encoder=sam_model.prompt_encoder,
+            #     selected_blocks=args.selected_blocks
+            # )
+            # if args.finetune_mode == 1:
+            #     pautsam_model = LoRA_Sam(args,pautsam_model,r=args.lora_rank).sam
             
 
             if args.use_wandb:
                 init_wandb(args)
 
-            SAM_Trainer = SAMTrainer(args,gpu_id=int(os.environ["LOCAL_RANK"]), model = pautsam_model,\
-                trainloader = train_dataloader,valloader=val_dataloader, testloader=None,\
-                model_save_path=model_save_path)
-            SAM_Trainer.train()
+            # requires update
+            # SAM_Trainer = SAMTrainer(args,gpu_id=int(os.environ["LOCAL_RANK"]), model = pautsam_model,\
+            #     trainloader = train_dataloader,valloader=val_dataloader, testloader=None,\
+            #    model_save_path=model_save_path)
+            # SAM_Trainer.train()
 
 
         elif args.do_5_fold_cross_validation:
             kfold_dataset = AnnotationBalancedKFoldPAUTFLAW(dataset_root=args.dataset_path,split="k_fold",filter_empty=args.filter_empty,\
                                                             preprocess=args.backbone, task_name=args.task_name,\
                                                                 test_size=args.test_split,use_bins=args.use_binned_stratify,n_splits=5,train_data_portion=args.train_data_portion)
+
             for fold in range(5):
                 set_seed(42)
                 train_dataset, val_dataset = kfold_dataset.get_fold(fold)
@@ -214,39 +218,51 @@ def main():
                 model_save_path = os.path.join(args.work_dir, args.task_name,args.run_name)
                 os.makedirs(model_save_path, exist_ok=True)
                 print("Model is saving in "+model_save_path)
-
                 train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size,pin_memory=True,\
                     shuffle=True,collate_fn=collate_fn,num_workers=4)
 
                 val_dataloader = DataLoader(val_dataset, batch_size=args.val_batch_size,pin_memory=True,\
                     shuffle=True,collate_fn=collate_fn,num_workers=1)
                     
-                sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)
+                sam2_model = build_sam2(args.model_cfg,args.checkpoint)
+                # print(torch.cuda.get_rng_state(device='cuda'))
+                # print(np.random.get_state())
 
-                pautsam_model = PAUTSAM(
-                    image_encoder=sam_model.image_encoder,
-                    mask_decoder=sam_model.mask_decoder,
-                    prompt_encoder=sam_model.prompt_encoder,
+                # for name, _ in sam2_model.named_modules():
+                #     if any(x in name.lower() for x in ['q', 'k', 'v']):
+                #         print(name)
+                
+                pautsam2_model = PAUTSAM2(
+                    model=sam2_model,
                     selected_blocks=args.selected_blocks
                 )
                 if args.finetune_mode == 1:
-                    pautsam_model = LoRA_Sam(args,pautsam_model,r=args.lora_rank).sam
+                    print(args.encoder_lora_layer)
+                    lora_config = LoraConfig(
+                        r=args.lora_rank,
+                        lora_alpha=args.lora_rank,
+                        target_modules=['qkv'],
+                        lora_dropout=0,
+                        bias="none",
+                        modules_to_save=[],
+                        layers_to_transform= "null" if args.encoder_lora_layer == 0 else args.encoder_lora_layer
+                    )
+                    pautsam2_model.sam2_model.image_encoder = get_peft_model(pautsam2_model.sam2_model.image_encoder, lora_config)                    
                 
 
                 if args.use_wandb:
                     init_wandb(args)
-
-                SAM_Trainer = SAMTrainer(args,gpu_id=int(os.environ["LOCAL_RANK"]), model = pautsam_model,\
+                SAM2_Trainer = SAM2Trainer(args,gpu_id=int(os.environ["LOCAL_RANK"]), model = pautsam2_model,\
                     trainloader = train_dataloader,valloader=val_dataloader, testloader=None,\
                     model_save_path=model_save_path)
-                f1 = SAM_Trainer.train()
+                f1 = SAM2_Trainer.train()
                 kfold_dataset.fold_results[fold]['f1_score'] = f1
 
                 del train_dataloader
                 del val_dataloader
-                del sam_model
-                del pautsam_model
-                del SAM_Trainer
+                del sam2_model
+                del pautsam2_model
+                del SAM2_Trainer
 
                 torch.cuda.empty_cache()
                 if args.use_wandb:
@@ -257,6 +273,7 @@ def main():
             print(f"Best model is from fold {fold_index+1}.")
             print()
             test_dataset = kfold_dataset.get_test_set()
+
             set_seed(42)
 
             test_dataloader = DataLoader(test_dataset, batch_size=args.val_batch_size,pin_memory=True,\
@@ -264,28 +281,38 @@ def main():
             
             output_save_path = os.path.join(args.work_dir,args.task_name,f"fold_{fold_index+1}","output_test")
             os.makedirs(output_save_path, exist_ok=True)
-
             if args.finetune_mode == 0:
                 model_load_path = os.path.join(args.work_dir,args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth') 
-                sam_model = sam_model_registry[args.model_type](checkpoint=model_load_path)
+                fineruned_checkpoint = torch.load(model_load_path, map_location="cpu")
+                sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
 
             elif args.finetune_mode == 1:
-                sam_model = sam_model_registry[args.model_type](checkpoint=args.checkpoint)        
-                sam_model = LoRA_Sam(args,sam_model,r=args.lora_rank).sam
-                model_load_path = os.path.join(args.work_dir, args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth')
-                sam_model.load_state_dict(torch.load(model_load_path), strict = False)
+                print(args.encoder_lora_layer)
+                sam2_model = build_sam2(args.model_cfg,ckpt_path=args.checkpoint)
+                lora_config = LoraConfig(
+                    r=args.lora_rank,
+                    lora_alpha=args.lora_rank,
+                    target_modules=['qkv'],
+                    lora_dropout=0,
+                    bias="none",
+                    modules_to_save=[],
+                    layers_to_transform= "null" if args.encoder_lora_layer == 0 else args.encoder_lora_layer
+                )
 
-            pautsam_model = PAUTSAM(
-                image_encoder=sam_model.image_encoder,
-                mask_decoder=sam_model.mask_decoder,
-                prompt_encoder=sam_model.prompt_encoder,
+                sam2_model.image_encoder = get_peft_model(sam2_model.image_encoder, lora_config)
+                model_load_path = os.path.join(args.work_dir,args.task_name,f"fold_{fold_index+1}",'sam_model_best.pth')
+                fineruned_checkpoint = torch.load(model_load_path, map_location="cpu")              
+        
+            pautsam2_model = PAUTSAM2(
+                model=sam2_model,
                 selected_blocks=args.selected_blocks
             )
-
+            pautsam2_model.load_state_dict(fineruned_checkpoint, strict=True)
+            
             evaluate(
                 valloader = test_dataloader,
                 device = int(os.environ["LOCAL_RANK"]),
-                model = pautsam_model.to(int(os.environ["LOCAL_RANK"])),
+                model = pautsam2_model.to(int(os.environ["LOCAL_RANK"])),
                 do_filtering = args.do_filtering,
                 kernel_size = args.kernel_size,
                 dilate_iter = args.dilate_iter,

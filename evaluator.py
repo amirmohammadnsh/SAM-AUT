@@ -24,13 +24,14 @@ def evaluate(
     for batch in tqdm(valloader, total=len(valloader), desc="Processing"):
 
         pixel_values, input_boxees = batch['pixel_values'].to(device),batch['input_boxes'].to(device)
-        sam_seg_mask,iou_score=model(pixel_values,input_boxees)
+        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            sam_seg_mask,iou_score=model(pixel_values,input_boxees)
 
         for i,sam_out_msk in enumerate(sam_seg_mask):
 
             image = get_PIL_image(datasetDirectory = valloader.dataset.img_folder,image_info = valloader.dataset.coco.loadImgs(batch["image_ids"][i].item())[0])
 
-            interpolated_mask = post_process_mask(sam_out_msk,pixel_values[i],batch['reshaped_input_sizes'][i],batch['original_sizes'][i],kind="pred")
+            interpolated_mask = post_process_mask(sam_out_msk,pixel_values[i],batch['original_sizes'][i],kind="pred")
             mask,tp,fp,fn,tp_list,fp_list,score_list,gt_count,pred_count,bboxes_list,gt_bboxes_list = pre_metric_eval(interpolated_mask,min_area,do_filtering,kernel_size,dilate_iter,iou_score[i].item(),batch["gt_bboxes"][i],iou_thresh=iou_thresh)
             dict_id_pred [batch["image_ids"][i].item()] = {"TP" : tp,"FP" : fp,"FN" : fn,\
                 "TP_LIST" : tp_list,"FP_LIST" : fp_list,'SCORE_LIST' : score_list,'GT_COUNT' : gt_count,'PRED_COUNT' : pred_count}
@@ -41,6 +42,8 @@ def evaluate(
     
 
     tp,fp,fn,p,r,f1,ap = calc_result(dict_id_pred)
+
+
 
 
     print('TP: {:.1f}\t'.format(tp),

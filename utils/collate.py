@@ -64,8 +64,6 @@ def collate_fn(batch):
     """
     pixel_values = [sample['pixel_values'] for sample in batch]
     original_sizes = [sample['original_sizes'] for sample in batch]
-    reshaped_input_sizes = [sample['reshaped_input_sizes'] for sample in batch]
-    reshaped_gt_mask_sizes = [sample['reshaped_gt_mask_sizes'] for sample in batch]
     input_boxes = [sample['input_boxes'] for sample in batch]
     labels = [sample["labels"] for sample in batch]
     image_ids = [sample["image_ids"] for sample in batch]
@@ -73,8 +71,6 @@ def collate_fn(batch):
 
     pixel_values = torch.stack(pixel_values)
     original_sizes = torch.stack(original_sizes)
-    reshaped_input_sizes = torch.stack(reshaped_input_sizes)
-    reshaped_gt_mask_sizes = torch.stack(reshaped_gt_mask_sizes)
     input_boxes = pad_tensors_to_max_rows(input_boxes)
     input_boxes = torch.stack(input_boxes)
     image_ids = torch.tensor(image_ids)
@@ -83,11 +79,11 @@ def collate_fn(batch):
     gt_bboxes = pad_tensors_to_max_rows(gt_bboxes)  
     gt_bboxes = torch.stack(gt_bboxes)  
 
+    
+    # batch = {}
     batch = {
         'pixel_values': pixel_values,
         'original_sizes':original_sizes,
-        'reshaped_input_sizes':reshaped_input_sizes,
-        'reshaped_gt_mask_sizes':reshaped_gt_mask_sizes ,
         'labels': labels,
         'input_boxes': input_boxes,
         'image_ids': image_ids,

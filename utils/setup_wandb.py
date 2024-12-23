@@ -4,7 +4,7 @@ import os
 def init_wandb(args):
     wandb.init(project=args.task_name, name=args.run_name,
                         config={
-                            "model_type":args.model_type,
+                            "model_type":args.model_cfg,
                             "n_gpu": int(os.environ["LOCAL_WORLD_SIZE"]),
                             "gpu_id(s)": os.environ["CUDA_VISIBLE_DEVICES"],
                             "backbone": args.backbone,
@@ -14,7 +14,7 @@ def init_wandb(args):
                             "finetune_mode": "Default" if args.finetune_mode == 0 else "LoRA" if args.finetune_mode == 1 else None,
                             "do_decoder_lora_layer": args.if_decoder_lora_layer,
                             "do_encoder_lora_layer": args.if_encoder_lora_layer,
-                            "encoder_lora_layer": args.encoder_lora_layer,
+                            "encoder_lora_layer": "null" if args.encoder_lora_layer == 0 else args.encoder_lora_layer,
                             "lora_rank": args.lora_rank if args.finetune_mode == 1 else None,
                             "batch_size": args.batch_size,
                             "val_batch_szie": args.val_batch_size,
@@ -36,4 +36,5 @@ def init_wandb(args):
                             "train_data_portion":args.train_data_portion,
                             "test_size":args.test_split,
                             "use_bins":args.use_binned_stratify
+
                         })

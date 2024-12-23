@@ -71,38 +71,31 @@ def vizualize_img_msk(image,gt_bboxes_list,pred_info_dict,bboxes_list,interpolat
     if pred_info_dict["FN"] == 0:
 
         for box in gt_bboxes_list:
-            # pass
             show_box(box,plt.gca(),'green',1)
 
         tp_indices = [i for i, num in enumerate(pred_info_dict['TP_LIST']) if num == 1]
         if tp_indices !=[]:
             tp_bboxes_list = list(operator.itemgetter(*tp_indices)(bboxes_list))
             if np.array(tp_bboxes_list).ndim == 1:
-                # pass
                 show_box(tp_bboxes_list,plt.gca(),'purple',1)
             else:
                 for box in tp_bboxes_list:
-                    # pass
                     show_box(box,plt.gca(),'purple',1)
 
         fp_indices = [i for i, num in enumerate(pred_info_dict['FP_LIST']) if num == 1]
         if fp_indices != []:
             fp_bboxes_list = list(operator.itemgetter(*fp_indices)(bboxes_list))
             if np.array(fp_bboxes_list).ndim == 1:
-                # pass
                 show_box(fp_bboxes_list,plt.gca(),'red',1)
             else:
                 for box in fp_bboxes_list:
-                    # pass
                     show_box(box,plt.gca(),'red',1)
     # Case FN !=0
     else:
         if pred_info_dict["TP"] == 0:
             for box in gt_bboxes_list:
-                # pass
                 show_box(box,plt.gca(),'blue',1)
             for box in bboxes_list:
-                # pass
                 show_box(box,plt.gca(),'red',1)
         # Case TP !=0
         else:
@@ -110,42 +103,33 @@ def vizualize_img_msk(image,gt_bboxes_list,pred_info_dict,bboxes_list,interpolat
             matched_indexes = find_matching_indices(bboxes_list,gt_bboxes_list)
             green_bboxes_list = list(operator.itemgetter(*matched_indexes)(gt_bboxes_list))
             if np.array(green_bboxes_list).ndim == 1:
-                # pass
                 show_box(green_bboxes_list,plt.gca(),'green',1)
             else:
                 for box in green_bboxes_list:
-                    # pass
                     show_box(box,plt.gca(),'green',1)
             blue_bboxes_list = [bbox for i, bbox in enumerate(gt_bboxes_list) if i not in matched_indexes]
             if np.array(blue_bboxes_list).ndim == 1:
-                # pass
                 show_box(blue_bboxes_list,plt.gca(),'blue',1)
             else:
                 for box in blue_bboxes_list:
-                    # pass
                     show_box(box,plt.gca(),'blue',1)
 
             tp_indices = [i for i, num in enumerate(pred_info_dict['TP_LIST']) if num == 1]
             if tp_indices !=[]:
                 tp_bboxes_list = list(operator.itemgetter(*tp_indices)(bboxes_list))
                 if np.array(tp_bboxes_list).ndim == 1:
-                    # pass
                     show_box(tp_bboxes_list,plt.gca(),'purple',1)
                 else:
                     for box in tp_bboxes_list:
-                        # pass
                         show_box(box,plt.gca(),'purple',1)
 
             fp_indices = [i for i, num in enumerate(pred_info_dict['FP_LIST']) if num == 1]
             if fp_indices != []:
                 fp_bboxes_list = list(operator.itemgetter(*fp_indices)(bboxes_list))
                 if np.array(fp_bboxes_list).ndim == 1:
-                    # pass
                     show_box(fp_bboxes_list,plt.gca(),'red',1)
-
                 else:
                     for box in fp_bboxes_list:
-                        # pass
                         show_box(box,plt.gca(),'red',1)
 
     plt.axis('off')

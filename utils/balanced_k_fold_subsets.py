@@ -3,7 +3,7 @@ import json
 import os
 from collections import defaultdict
 
-from dataset import PAUTFLAW
+from dataset import PAUTFLAW2
 
 from sklearn.model_selection import BaseCrossValidator,train_test_split
 from sklearn.utils import check_random_state
@@ -15,7 +15,7 @@ class AnnotationBalancedKFoldPAUTFLAW:
         self.split = split
         self.filter_empty = filter_empty
         self.preprocess = preprocess
-        self.dataset = PAUTFLAW(self.dataset_root,self.split,self.filter_empty,self.preprocess)
+        self.dataset = PAUTFLAW2(self.dataset_root,self.split,self.filter_empty,self.preprocess)
         self.task_name= task_name
         self.n_splits = n_splits
         self.random_state = random_state
@@ -35,7 +35,9 @@ class AnnotationBalancedKFoldPAUTFLAW:
         self.abkf = AnnotationBalancedKFold(n_splits=self.n_splits, shuffle=self.shuffle, random_state=self.random_state)
         
         # Generate and store the splits
+        # self.folds = list(self.abkf.split(np.arange(len(self.dataset)), self.annotation_counts))
         self.folds = list(self.abkf.split(self.train_val_indices, self.annotation_counts[self.train_val_indices]))
+
         if not loading:
             self.save_folds()
         if self.train_data_portion == 1.0:
@@ -66,20 +68,16 @@ class AnnotationBalancedKFoldPAUTFLAW:
             raise ValueError(f"fold_idx should be between 0 and {self.n_splits - 1}")
         
         train_indices, val_indices = self.folds[fold_idx]
-
         if self.train_data_portion < 1.0:
             # Calculate the number of training samples to use
             train_annotation_counts = self.annotation_counts[self.train_val_indices[train_indices]]
             total_annotations = train_annotation_counts.sum()
             target_annotations = int(total_annotations * self.train_data_portion)
             
-            # Randomly shuffle the indices
-            rng = check_random_state(self.random_state)
-            shuffled_indices = rng.permutation(train_indices)
             # Select indices until we reach the target number of annotations
             cumulative_annotations = 0
             selected_train_indices = []
-            for idx in shuffled_indices:
+            for idx in train_indices:
                 selected_train_indices.append(idx)
                 cumulative_annotations += self.annotation_counts[self.train_val_indices[idx]]
                 if cumulative_annotations >= target_annotations:
@@ -90,7 +88,10 @@ class AnnotationBalancedKFoldPAUTFLAW:
             selected_train_indices = train_indices
             
         train_subset = CustomSubset(self.dataset, self.train_val_indices[selected_train_indices])
+
+        # train_subset = CustomSubset(self.dataset, self.train_val_indices[train_indices])
         val_subset = CustomSubset(self.dataset, self.train_val_indices[val_indices])
+        
         if self.train_data_portion < 1.0:
             print(f"Fold {fold_idx + 1}:")
             
@@ -115,7 +116,7 @@ class AnnotationBalancedKFoldPAUTFLAW:
             return train_subset, val_subset
         else:
             return train_subset, val_subset
-        
+
     def print_split_fold_stats(self):
         train_val_annotations = self.annotation_counts[self.train_val_indices].sum()
         test_annotations = self.annotation_counts[self.test_indices].sum()
@@ -182,7 +183,7 @@ class AnnotationBalancedKFoldPAUTFLAW:
             use_bins = folds_data["use_bins"],
             shuffle=folds_data["shuffle"],
             random_state=folds_data["random_state"],
-            loading = True
+            loading=True
         )
         instance.train_val_indices = np.array(folds_data["train_val_indices"])
         instance.test_indices = np.array(folds_data["test_indices"])        
@@ -218,7 +219,7 @@ class AnnotationBalancedKFold(BaseCrossValidator):
             folds[target_fold].append(idx)
             fold_annotation_counts[target_fold] += annotation_counts[idx]
 
-
+ 
         for fold in folds:
             yield np.array(fold)
 

@@ -6,7 +6,7 @@ from collections import defaultdict
 import torch
 import torch.nn.functional as F
 
-from segment_anything.utils.amg import remove_small_regions
+from sam2.utils.amg import remove_small_regions
 
 def compute_precision(truePositive,pred_count):
     return truePositive / (pred_count + 1e-16)
@@ -17,15 +17,14 @@ def compute_f1_score(precision,recall):
 def compute_AP(tp_list,score_list,gt_count):
     return ap(tp_list,score_list,gt_count)
 
-def post_process_mask(input_mask,pixel_values,reshaped_input_sizes,original_sizes,kind="gt"):
+def post_process_mask(input_mask,pixel_values,original_sizes,kind="gt"):
     with torch.no_grad():
         interpolated_mask = F.interpolate(input_mask.unsqueeze(0), (pixel_values.shape[1], pixel_values.shape[2]), mode="bilinear", align_corners=False)
-        interpolated_mask = interpolated_mask[..., : reshaped_input_sizes[0], : reshaped_input_sizes[1]]
         interpolated_mask = F.interpolate(interpolated_mask, (original_sizes[0],original_sizes[1]), mode="bilinear", align_corners=False)
 
         if kind == "pred":            
             interpolated_mask = torch.sigmoid(interpolated_mask)
-            interpolated_mask = interpolated_mask.cpu().numpy().squeeze()
+            interpolated_mask = interpolated_mask.cpu().float().numpy().squeeze()
             interpolated_mask = (interpolated_mask > 0.5).astype(np.uint8)
             return interpolated_mask
         elif kind == "gt":
@@ -71,31 +70,6 @@ def compute_ap(precision, recall):
     # and sum (\Delta recall) * prec
     ap = np.sum((mrec[i + 1] - mrec[i]) * mpre[i + 1])
     return ap
-### old way of converting masks to bbox
-# def mask2bbox(mask,do_filtering = True,k_size=3,dilate_iter=3):
-#     # pred: w, h  |  label: w, h
-#     # if isinstance(mask, torch.Tensor):
-#     #     mask = mask.cpu().detach().numpy().astype(np.uint8)
-#     # elif isinstance(mask, np.ndarray):
-#     #     mask = mask.astype(np.uint8)
-#     if do_filtering:
-#         kernel = np.ones((k_size,k_size), np.uint8)
-#         # mask = cv2.erode(mask, kernel, iterations=1)
-#         mask = cv2.dilate(mask, kernel, iterations=dilate_iter)
-
-#     contours, hierarchy = cv2.findContours(
-#         mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-#     )
-
-#     bboxes_list = []
-#     max_w, max_h = 0, 0
-
-#     for cont in contours:
-#         x1, y1, w, h = cv2.boundingRect(cont)
-#         x2, y2 = x1+w, y1+h
-#         bboxes_list.append([x1, y1, x2, y2])
-
-#     return bboxes_list
 
 def mask2bbox(mask,do_filtering = True,k_size=3,dilate_iter=3):
     if do_filtering:
@@ -173,7 +147,7 @@ def evaluation(pred_bboxes, confidence_score, gt_bboxes, iou_thresh=0.5):
     return true_positive, false_positive, false_negative, tp_list, fp_list, score_list, gt_count, pred_count
 
 def pre_metric_eval(interpolated_mask,min_area,do_filtering,kernel_size,dilate_iter,pred_mask_iou,gt_bboxes,iou_thresh):
-    # mask = interpolated_mask
+
     mask, _ = remove_small_regions(interpolated_mask, min_area, 'islands')
     mask, _ = remove_small_regions(mask, min_area, 'holes')
 

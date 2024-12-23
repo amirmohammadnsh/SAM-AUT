@@ -1,1 +1,1 @@
-from .PAUTFLAW import PAUTFLAW
+from .PAUTFLAW2 import PAUTFLAW2
