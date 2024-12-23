@@ -1,0 +1,2 @@
+#!/bin/bash
+CUDA_VISIBLE_DEVICES=0 torchrun --standalone main.py --task_name "ViT_B_918_1e-4_3_ND" --use_wandb --do_5_fold_cross_validation --single_device --max_epochs 25 --batch_size 4 --base_lr 1e-4 --filter_empty --selected_blocks 1  --finetune_mode 0 --val_batch_size 8 --min_area 4.5 --dataset_path '/path/to/COCO_format_dataset/' --test_split 0.2 --val_epoch_duration 1 --weight_decay 0.01 --lr_reducer_factor 0.7

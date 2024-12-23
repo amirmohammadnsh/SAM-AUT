@@ -1,0 +1,5 @@
+CUDA_VISIBLE_DEVICES=0 torchrun --standalone inference.py --split "k_fold" --model_type "vit_t" --checkpoint './checkpoints/mobile_sam.pt'  --task_name "ViT_T_918_1e-3_3_ND"  --batch_size 64  --selected_blocks 1 --finetune_mode 0 --min_area 4.5 
+# CUDA_VISIBLE_DEVICES=0 torchrun --standalone inference.py --split "k_fold"  --task_name "ViT_B_918_1e-4_3_ND"  --batch_size 8 --selected_blocks 1 --finetune_mode 0 --min_area 4.5 
+# CUDA_VISIBLE_DEVICES=0 torchrun --standalone inference.py --split "k_fold"  --task_name "LoRA_ViT_L_918_1e-3_1_ND_Global"  --batch_size 4 --selected_blocks 1 --finetune_mode 1 --min_area 4.5 --model_type "vit_l" --checkpoint './checkpoints/sam_vit_l_0b3195.pth' --if_encoder_lora_layer --encoder_lora_layer 5 11 17 23 
+# CUDA_VISIBLE_DEVICES=0 torchrun --standalone inference.py --split "k_fold"  --task_name "LoRA_ViT_H_918_1e-3_1_ND_Global"  --batch_size 4 --selected_blocks 1 --finetune_mode 1 --min_area 4.5 --model_type "vit_h" --checkpoint './checkpoints/sam_vit_h_4b8939.pth' --if_encoder_lora_layer --encoder_lora_layer 7 15 23 31
+
