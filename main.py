@@ -161,7 +161,7 @@ def main():
         if args.use_wandb:
             import wandb
             wandb.require("core")
-            wandb.login(key="a16835308aa4c2498745436187ef4d6520a70850")
+            wandb.login()
 
         if not args.do_5_fold_cross_validation:
 
